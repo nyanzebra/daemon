@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Daemon",
+  "description": "A declarative description of a daemon: the system user/group it runs\nas, the directories it needs, its binary, its systemd unit, and\n(optionally) a seed config file — everything [`Daemon::install`] needs\nto set the daemon up, and [`Daemon::uninstall`] needs to tear it back\ndown.\n\n`Daemon` implements [`Serialize`]/[`Deserialize`], so it can be loaded\nfrom a config file (TOML, JSON, or anything else `serde` supports)\ninstead of being built by hand — see `examples/install_daemon_from_toml.rs`.",
+  "type": "object",
+  "properties": {
+    "binary": {
+      "description": "The daemon binary to copy into place.",
+      "$ref": "#/$defs/Binary"
+    },
+    "bootstrap": {
+      "description": "A seed config file, written once on first install and never\noverwritten or removed if it already existed beforehand.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Bootstrap"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "directories": {
+      "description": "Directories to create, each anchored under a [`DaemonPath`] root.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Directory"
+      }
+    },
+    "groups": {
+      "description": "Groups to create.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Group"
+      }
+    },
+    "help": {
+      "description": "Printed after a successful install (e.g. next-step instructions for\nthe person running it).",
+      "type": "string"
+    },
+    "service": {
+      "description": "The systemd unit to install.",
+      "$ref": "#/$defs/Service"
+    },
+    "users": {
+      "description": "Users to create. Each user's `belongs_to` groups are also added as\nmembers during install.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/User"
+      }
+    }
+  },
+  "required": [
+    "users",
+    "groups",
+    "directories",
+    "service",
+    "binary",
+    "help"
+  ],
+  "$defs": {
+    "Binary": {
+      "description": "The daemon's executable, copied from `src` to `dest` and made\nworld-executable (`0o755`).",
+      "type": "object",
+      "properties": {
+        "dst": {
+          "description": "Path to copy the binary to (e.g. `/usr/local/bin/mydaemon`).",
+          "type": "string"
+        },
+        "name": {
+          "description": "Identifying name for this binary. Not currently used to resolve any\npath — `src`/`dst` are used directly.",
+          "type": "string"
+        },
+        "src": {
+          "description": "Path to copy the binary from (e.g. a local build output).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "src",
+        "dst"
+      ]
+    },
+    "Bootstrap": {
+      "description": "A single seed file, written to `<kind's root>/<dir_name>/<file_name>` and\nleft alone on every subsequent install (or uninstall) if it already existed\n— this crate never overwrites or deletes config a daemon or its administrator\nmay have since edited.",
+      "type": "object",
+      "properties": {
+        "configs": {
+          "description": "Configs to be written the first time the file is created. Ignored if the\nfile already exists.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Config"
+          }
+        },
+        "path": {
+          "description": "Which FHS root the file is created under.",
+          "$ref": "#/$defs/DaemonPath"
+        }
+      },
+      "required": [
+        "path",
+        "configs"
+      ]
+    },
+    "Config": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "filename",
+        "content"
+      ]
+    },
+    "DaemonPath": {
+      "description": "A directory anchored under one of the standard FHS roots.",
+      "oneOf": [
+        {
+          "description": "`/etc/<rest of path>` — configuration",
+          "type": "object",
+          "properties": {
+            "Configuration": {
+              "$ref": "#/$defs/RelativePath"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Configuration"
+          ]
+        },
+        {
+          "description": "`/var/lib/<rest of path>` — persistent state/data",
+          "type": "object",
+          "properties": {
+            "State": {
+              "$ref": "#/$defs/RelativePath"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "State"
+          ]
+        },
+        {
+          "description": "`/var/cache/<rest of path>` — cache",
+          "type": "object",
+          "properties": {
+            "Cache": {
+              "$ref": "#/$defs/RelativePath"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Cache"
+          ]
+        },
+        {
+          "description": "`/var/log/<rest of path>` — logs",
+          "type": "object",
+          "properties": {
+            "Logs": {
+              "$ref": "#/$defs/RelativePath"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Logs"
+          ]
+        },
+        {
+          "description": "`/run/<rest of path>` — runtime state (pid files, sockets)",
+          "type": "object",
+          "properties": {
+            "Runtime": {
+              "$ref": "#/$defs/RelativePath"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Runtime"
+          ]
+        }
+      ]
+    },
+    "Directory": {
+      "description": "A single directory a daemon needs, resolved to `<kind's root>/<name>`\n(e.g. `DaemonPath::State` + `\"myapp\"` → `/var/lib/myapp`).",
+      "type": "object",
+      "properties": {
+        "group": {
+          "description": "Group to `chown` the directory to.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Which FHS root this directory is created under.",
+          "$ref": "#/$defs/DaemonPath"
+        },
+        "permissions": {
+          "description": "Octal permission bits (e.g. `0o750`), applied via `chmod`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "user": {
+          "description": "User to `chown` the directory to.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "permissions",
+        "group",
+        "user"
+      ]
+    },
+    "Group": {
+      "description": "A system group, identified by name.",
+      "type": "string"
+    },
+    "RelativePath": {
+      "description": "A path that's been checked to be relative and free of `..` traversal.\nThe only way to get one is [`RelativePath::new`] (or `Deserialize`,\nwhich calls it) — the inner `PathBuf` is private, so there's no way to\nconstruct a `RelativePath` that skipped the check. Having one at all\n*is* the proof it's valid.",
+      "type": "string"
+    },
+    "Service": {
+      "description": "A systemd unit, written to `/etc/systemd/system/<name>.service`.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "description": "The unit file's contents.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The unit name (without `.service`) — also used directly as the\n`systemctl` target for start/stop/restart/disable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "content"
+      ]
+    },
+    "User": {
+      "description": "A system user, created as a system account with no home directory and a\n`nologin` shell — daemons don't need interactive login.",
+      "type": "object",
+      "properties": {
+        "belongs_to": {
+          "description": "Groups this user is added to as a member during [`Daemon::install`](crate::Daemon::install).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Group"
+          }
+        },
+        "name": {
+          "description": "The username.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "belongs_to"
+      ]
+    }
+  }
+}
