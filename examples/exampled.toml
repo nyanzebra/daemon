@@ -1,0 +1,56 @@
+#:schema ../schemas/daemon-schema.json
+help = "exampled installed. Manage it with: systemctl {start,stop,status} exampled"
+
+groups = ["exampled"]
+
+[[users]]
+name = "exampled"
+belongs_to = ["exampled"]
+
+[[directories]]
+permissions = 0o750
+user = "exampled"
+group = "exampled"
+
+[directories.path]
+State = "exampled"
+
+[[directories]]
+permissions = 0o750
+user = "exampled"
+group = "exampled"
+
+[directories.path]
+Logs = "exampled"
+
+[bootstrap.path]
+Configuration = "exampled"
+
+[[bootstrap.configs]]
+filename = "config.toml"
+content = """
+# exampled default configuration
+port = 9000
+"""
+
+[binary]
+name = "exampled"
+src = "./target/release/examples/exampled"
+dst = "/usr/local/bin/exampled"
+
+[service]
+name = "exampled"
+content = """
+[Unit]
+Description=Example daemon
+
+[Service]
+Type=simple
+User=exampled
+Group=exampled
+ExecStart=/usr/local/bin/exampled
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+"""
